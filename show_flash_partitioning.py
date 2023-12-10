@@ -39,7 +39,7 @@ def show_flash_partitioning(source, target, env):
 
         return False
 
-    def buid_tree(start, end, flash, indent = 0, stack = []):
+    def build_tree(start, end, flash, indent = 0, stack = []):
         prev = start
         empty = True
 
@@ -66,7 +66,7 @@ def show_flash_partitioning(source, target, env):
                 print_entry(color, element, indent)
 
                 if (element['container']):
-                    buid_tree(element['start'], element['end'], flash, indent+1, stack)
+                    build_tree(element['start'], element['end'], flash, indent+1, stack)
 
         if (not empty and prev < end):
             print_entry(console_color.GREEN, { 'name': 'FREE', 'start': prev, 'end': end}, indent)
@@ -193,7 +193,7 @@ def show_flash_partitioning(source, target, env):
     # Größe der KO Tabelle
     knx_ko_table_size = get_knx_max_ko_number() * 2
     # Größe der GA Tabelle geschätzt
-    # Annahme, dass im Schnitt 2 GA mit einem KO verküft wird = get_knx_max_ko_number * 4 (Eintrag) * 2 (GAs)
+    # Annahme, dass im Schnitt 2 GA mit einem KO verknüpft wird = get_knx_max_ko_number * 4 (Eintrag) * 2 (GAs)
     knx_ga_table_size = knx_ko_table_size * 4
     # Metadaten & etwas Overhead
     knx_meta = 100
@@ -213,7 +213,7 @@ def show_flash_partitioning(source, target, env):
     print("")
     stack = []
     print("{}Show flash partitioning:{}".format(console_color.YELLOW, console_color.END))
-    buid_tree(flash_start, flash_end, sorted_flash_elements, 1, stack)
+    build_tree(flash_start, flash_end, sorted_flash_elements, 1, stack)
     if (knx_used > 0):
         print("")
         print("* This value is an estimate")
