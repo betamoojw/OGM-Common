@@ -14,7 +14,7 @@ namespace OpenKNX
                 if (_inverted)
                     return delayCheck(_lastMillis, OPENKNX_LEDEFFECT_ACTIVITY_PAUSE) ? 255 : 0;
                 else
-                    return delayCheck(_lastMillis, OPENKNX_LEDEFFECT_ACTIVITY_DURATION) ? 255 : 1;
+                    return delayCheck(_lastMillis, OPENKNX_LEDEFFECT_ACTIVITY_DURATION) ? 0 : 255;
             };
         } // namespace Effects
     } // namespace Led
