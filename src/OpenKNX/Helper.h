@@ -9,7 +9,7 @@
 #define delayCheckMillis(last, duration) (millis() - last >= duration)
 #define delayCheckMicros(last, duration) (micros() - last >= duration)
 #define delayCheck(last, duration) delayCheckMillis(last, duration)
-#define delayTimerInit() (millis() == 0 ? 1 : millis())
+#define delayTimerInit() (max(millis(), 1UL))
 
 #define NO_NUM -987654321.0F // normal NAN-Handling does not work
 #define isNum(value) ((value + 10.0) > NO_NUM)

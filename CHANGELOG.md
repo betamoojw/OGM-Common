@@ -9,6 +9,7 @@
 * Update: Scripts
 * App: Support SerialLED (Neopixel/WS2812)
 * Add: PSRAM info in 'm' console command
+* Fix: delayTimerInit could return 0 in case of overflow between calls to millis()
 
 ## 1.2.0: 2024-07-02
 * Update: RP2040 Platform to Core 3.9.3
