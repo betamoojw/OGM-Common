@@ -11,6 +11,7 @@
 * Add: PSRAM info in 'm' console command
 * Fix: delayTimerInit could return 0 in case of overflow between calls to millis()
 * Fix: Misspelling writeDiagenoseKo -> writeDiagnoseKo
+* Add: \[ESP32_JTAG\] section in platformio.esp32.ini
 
 ## 1.2.0: 2024-07-02
 * Update: RP2040 Platform to Core 3.9.3
