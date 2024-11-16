@@ -15,23 +15,35 @@ namespace OpenKNX
     }
 
 #ifdef BASE_KoDiagnose
-    void Console::writeDiagenoseKo(const char* message, ...)
+    void Console::writeDiagnoseKo(const char* message, va_list& values)
     {
-        va_list values;
-        va_start(values, message);
-
         char buffer[15] = {}; // Last byte must be zero!
         uint8_t len = vsnprintf(buffer, 15, message, values);
 
         if (len >= 15)
-            openknx.hardware.fatalError(FATAL_SYSTEM, "BufferOverflow: writeDiagenoseKo message too long");
-
-        va_end(values);
+            openknx.hardware.fatalError(FATAL_SYSTEM, "BufferOverflow: writeDiagnoseKo message too long");
 
         _diagnoseKoOutput = true;
         KoBASE_Diagnose.value(buffer, Dpt(16, 1));
         knx.loop();
         _diagnoseKoOutput = false;
+    }
+
+    void Console::writeDiagnoseKo(const char* message, ...)
+    {
+        va_list values;
+        va_start(values, message);
+        writeDiagnoseKo(message, values);
+        va_end(values);
+    }
+
+    // fallback for old spelling mistake in method name
+    void Console::writeDiagenoseKo(const char* message, ...)
+    {
+        va_list values;
+        va_start(values, message);
+        writeDiagnoseKo(message, values);
+        va_end(values);
     }
 
     void Console::processDiagnoseKo(GroupObject& ko)
@@ -339,9 +351,9 @@ namespace OpenKNX
         if (diagnoseKo)
         {
             if (openknx.watchdog.active())
-                openknx.console.writeDiagenoseKo("WD ON (%ix)", openknx.watchdog.resets());
+                openknx.console.writeDiagnoseKo("WD ON (%ix)", openknx.watchdog.resets());
             else
-                openknx.console.writeDiagenoseKo("WD OFF");
+                openknx.console.writeDiagnoseKo("WD OFF");
         }
     #endif
         if (openknx.watchdog.active())
@@ -492,7 +504,7 @@ namespace OpenKNX
 #ifdef BASE_KoDiagnose
         if (diagnoseKo)
         {
-            openknx.console.writeDiagenoseKo("%s", uptimeStr.c_str());
+            openknx.console.writeDiagnoseKo("%s", uptimeStr.c_str());
         }
 #endif
         openknx.logger.logWithPrefixAndValues("Uptime", "%s", uptimeStr.c_str());
@@ -504,8 +516,8 @@ namespace OpenKNX
 #ifdef BASE_KoDiagnose
         if (diagnoseKo)
         {
-            openknx.console.writeDiagenoseKo("CUR %.3fKiB", ((float)freeMemory() / 1024));
-            openknx.console.writeDiagenoseKo("MIN %.3fKiB", ((float)openknx.common.freeMemoryMin() / 1024));
+            openknx.console.writeDiagnoseKo("CUR %.3fKiB", ((float)freeMemory() / 1024));
+            openknx.console.writeDiagnoseKo("MIN %.3fKiB", ((float)openknx.common.freeMemoryMin() / 1024));
         }
 #endif
         openknx.logger.logWithPrefixAndValues("Free memory", "%.3f KiB (min. %.3f KiB)", ((float)freeMemory() / 1024), ((float)openknx.common.freeMemoryMin() / 1024));
