@@ -14,9 +14,9 @@ extern "C"
 
 #define CONSOLE_HEADLINE_COLOR 33
 #ifdef ARDUINO_ARCH_SAMD
-#define CONSOLE_INPUT_SIZE 14
+    #define CONSOLE_INPUT_SIZE 14
 #else
-#define CONSOLE_INPUT_SIZE 100
+    #define CONSOLE_INPUT_SIZE 100
 #endif
 
 namespace OpenKNX
@@ -49,6 +49,9 @@ namespace OpenKNX
 #ifndef ARDUINO_ARCH_SAMD
         void processPinCommand(const std::string& cmd);
 #endif
+#ifdef BASE_KoDiagnose
+        void writeDiagnoseKo(const char* message, va_list& values);
+#endif
 
       public:
         char prompt[CONSOLE_INPUT_SIZE + 1] = {};
@@ -68,6 +71,7 @@ namespace OpenKNX
 
 #ifdef BASE_KoDiagnose
         void processDiagnoseKo(GroupObject& ko);
+        void writeDiagnoseKo(const char* message, ...);
         void writeDiagenoseKo(const char* message, ...);
 #endif
     };
