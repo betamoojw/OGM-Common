@@ -310,8 +310,16 @@ namespace OpenKNX
         openknx.logger.logWithPrefixAndValues("Application (ETS)", "Number: %s  Version: %s  Configured: %i", openknx.info.humanApplicationNumber().c_str(), openknx.info.humanApplicationVersion().c_str(), knx.configured());
         openknx.logger.logWithPrefixAndValues("Firmware", "Number: %s  Version: %s  Name: %s", openknx.info.humanFirmwareNumber().c_str(), openknx.info.humanFirmwareVersion().c_str(), MAIN_OrderNumber);
         openknx.logger.logWithPrefix("Serial number", openknx.info.humanSerialNumber().c_str());
-#ifdef HARDWARE_NAME
-        openknx.logger.logWithPrefixAndValues("Board", "%s", HARDWARE_NAME);
+#ifdef DEVICE_ID
+    #ifdef DEVICE_NAME
+        openknx.logger.logWithPrefixAndValues("Device", "%s (%s)", DEVICE_NAME, DEVICE_ID);
+    #else
+        openknx.logger.logWithPrefixAndValues("Device", "%s", DEVICE_ID);
+    #endif
+#else
+    #ifdef HARDWARE_NAME
+        openknx.logger.logWithPrefixAndValues("Device", "%s", HARDWARE_NAME);
+    #endif
 #endif
 
 #ifdef OPENKNX_DUALCORE
@@ -522,9 +530,9 @@ namespace OpenKNX
 #endif
         openknx.logger.logWithPrefixAndValues("Free memory", "%.3f KiB (min. %.3f KiB)", ((float)freeMemory() / 1024), ((float)openknx.common.freeMemoryMin() / 1024));
 #ifdef ARDUINO_ARCH_ESP32
-#if  BOARD_HAS_PSRAM
+    #if BOARD_HAS_PSRAM
         openknx.logger.logWithPrefixAndValues("Free PSRAM", "%.3f KiB (min. %.3f KiB)", ((float)ESP.getFreePsram() / 1024), ((float)ESP.getMinFreePsram() / 1024));
-#endif
+    #endif
     #ifdef OPENKNX_DUALCORE
         openknx.logger.logWithPrefixAndValues("Free stack size", "Loop0: %i bytes - Loop1: %i bytes", openknx.common.freeStackMin(), openknx.common.freeStackMin1());
     #else
