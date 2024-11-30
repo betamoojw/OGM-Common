@@ -443,9 +443,9 @@ namespace OpenKNX
             printMessage("#");
             printColorCode(0);
 
-            char buffer[63];
-            snprintf(buffer, 63, "Device: %s (%s) - Address: %s", MAIN_OrderNumber, openknx.info.humanFirmwareVersion().c_str(), openknx.info.humanIndividualAddress().c_str());
             printMessage("   |   ");
+            char buffer[63];
+            snprintf(buffer, 63, "%s (%s) - Address: %s", MAIN_OrderNumber, openknx.info.humanFirmwareVersion().c_str(), openknx.info.humanIndividualAddress().c_str());
             printMessage(buffer);
 
             for (uint8_t i = 0; i < (uint8_t)(62 - strlen(buffer)); i++)
@@ -459,7 +459,21 @@ namespace OpenKNX
             printColorCode(colorGreen);
             printMessage("+----+");
             printColorCode(0);
+#if defined(DEVICE_ID)
+            printMessage("   |   ");
+    #if defined(DEVICE_NAME)
+            memset(buffer, 53, 0x0);
+            snprintf(buffer, 63, "%s (%s)", DEVICE_NAME, DEVICE_ID);
+    #else
+            snprintf(buffer, 63, "%s", DEVICE_ID);
+    #endif
+            printMessage(buffer);
+            for (uint8_t i = 0; i < (uint8_t)(62 - strlen(buffer)); i++)
+                printMessage(" ");
+            printMessage("|");
+#else
             printMessage("   |                                                                 |");
+#endif
             afterLog();
 
             // Line 3: "# KNX "

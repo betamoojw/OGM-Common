@@ -308,8 +308,12 @@ namespace OpenKNX
         openknx.logger.color(0);
         openknx.logger.logWithPrefix("KNX Address", openknx.info.humanIndividualAddress().c_str());
         openknx.logger.logWithPrefixAndValues("Application (ETS)", "Number: %s  Version: %s  Configured: %i", openknx.info.humanApplicationNumber().c_str(), openknx.info.humanApplicationVersion().c_str(), knx.configured());
-        openknx.logger.logWithPrefixAndValues("Firmware", "Number: %s  Version: %s  Name: %s", openknx.info.humanFirmwareNumber().c_str(), openknx.info.humanFirmwareVersion().c_str(), MAIN_OrderNumber);
-        openknx.logger.logWithPrefix("Serial number", openknx.info.humanSerialNumber().c_str());
+        openknx.logger.logWithPrefixAndValues("Firmware", "Number: %s  Version: %s", openknx.info.humanFirmwareNumber().c_str(), openknx.info.humanFirmwareVersion().c_str());
+#ifdef FIRMWARE_VARIANT
+        openknx.logger.logWithPrefixAndValues("", "Name: %s  Variant: %s", MAIN_OrderNumber, FIRMWARE_VARIANT);
+#else
+        openknx.logger.logWithPrefixAndValues("", "Name: %s", MAIN_OrderNumber);
+#endif
 #ifdef DEVICE_ID
     #ifdef DEVICE_NAME
         openknx.logger.logWithPrefixAndValues("Device", "%s (%s)", DEVICE_NAME, DEVICE_ID);
@@ -321,6 +325,7 @@ namespace OpenKNX
         openknx.logger.logWithPrefixAndValues("Device", "%s", HARDWARE_NAME);
     #endif
 #endif
+        openknx.logger.logWithPrefix("Serial number", openknx.info.humanSerialNumber().c_str());
 
 #ifdef OPENKNX_DUALCORE
         const char* cpuMode = openknx.usesDualCore() ? "Dual-Core" : "Single-Core";
