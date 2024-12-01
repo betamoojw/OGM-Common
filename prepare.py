@@ -95,7 +95,7 @@ def get_git_version(path):
 
 
 def get_ets_version(version_string):
-  result = re.match(r"^(\d)\.(\d)\.(\d)(\+.*)*$", version_string)
+  result = re.match(r"^(\d+)\.(\d+)\.(\d+)(\+.*)*$", version_string)
   if result:
     major =  int(result.group(1))
     minor =  int(result.group(2))

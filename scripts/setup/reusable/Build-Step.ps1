@@ -80,8 +80,26 @@ if ($binaryFormat -eq "bin") {
   $processor = "SAMD"
 }
 
+# need to do this BEFORE the USB Upload-File is created
+if ($processor -eq "RP2040") {
+  # create KNX-Upload-Firmware-<firmwarename>.ps1 script
+  $fileName = "release/KNX-Upload-Firmware-$productName.ps1"
+  if (![string]::IsNullOrEmpty($ProjectDir)) {
+    $fileName = Join-Path $ProjectDir $fileName
+  }
+
+  # Write the script file content to the file 
+  $scriptContent = "./data/KNX-Upload-Firmware-Generic.ps1 $firmwareName.$binaryFormat"
+  if (Test-Path $fileName) { Clear-Content -Path $fileName }
+  Add-Content -Path $fileName -Value $scriptContent
+  if (!$?) {
+    Write-Host "ERROR: $fileName could not be created!"
+    exit 1
+  }
+}
+
 # create Upload-Firmware-<firmwarename>.ps1 script
-$fileName = "release/Upload-Firmware-$productName.ps1"
+$fileName = "release/USB-Upload-Firmware-$productName.ps1"
 if (![string]::IsNullOrEmpty($ProjectDir)) {
   $fileName = Join-Path $ProjectDir $fileName
 }
