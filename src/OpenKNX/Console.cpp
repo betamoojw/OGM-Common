@@ -317,7 +317,7 @@ namespace OpenKNX
         openknx.logger.log("        \x1B[32m# \x1B[37mKNX\x1B[0m            wiki.openknx.de - forum.openknx.de");
         openknx.logger.log("");
         openknx.logger.color(CONSOLE_HEADLINE_COLOR);
-        openknx.logger.log("======================== Informations ==========================================");
+        openknx.logger.log("======================== Information ===========================================");
         openknx.logger.color(0);
 
         openknx.logger.color(CONSOLE_HEADLINE_COLOR);
