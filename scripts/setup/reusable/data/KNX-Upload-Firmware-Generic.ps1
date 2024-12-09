@@ -26,6 +26,6 @@ if (!$toolsExist) {
 
 if ($toolsExist) {
     $firmwareName = $args[0]
-    ~/bin/KnxFileTransferClient.exe fwupdate --connect Auto "./data/$firmwareName"
+    ~/bin/KnxFileTransferClient.exe fwupdate --connect Search "./data/$firmwareName"
     timeout /T -1
 }
