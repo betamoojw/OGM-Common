@@ -14,11 +14,20 @@ namespace OpenKNX
         const OPENKNX_GPIO_T GPIO_TYPES[OPENKNX_GPIO_NUM + 1] = {OPENKNX_GPIO_T_EMBEDDED, OPENKNX_GPIO_TYPES};
         const uint16_t GPIO_ADDRS[OPENKNX_GPIO_NUM + 1] = {0, OPENKNX_GPIO_ADDRS};
         const uint8_t GPIO_INTS[OPENKNX_GPIO_NUM + 1] = {0, OPENKNX_GPIO_INTS};
+
+        std::vector<Manager::GpioQueueEntry> Manager::gpioQueue;
+
+        void Manager::queueI2CAction(const Manager::GpioQueueEntry &entry)
+        {
+            noInterrupts();
+            gpioQueue.push_back(entry);
+            interrupts();
+        }
 #else
     #define OPENKNX_GPIO_NUM 0
         const OPENKNX_GPIO_T GPIO_TYPES[1] = {OPENKNX_GPIO_T_EMBEDDED};
 #endif
-        Base* GPIOExpanders[OPENKNX_GPIO_NUM + 1];
+        Base *GPIOExpanders[OPENKNX_GPIO_NUM + 1];
 
         Manager::Manager()
         {
@@ -112,6 +121,31 @@ namespace OpenKNX
 
         void Manager::loop()
         {
+#ifdef OPENKNX_GPIO_NUM
+            noInterrupts();
+            auto queueCopy = gpioQueue;
+            gpioQueue.clear();
+            interrupts();
+
+            for (const auto &entry : queueCopy)
+            {
+                int8_t localpin = entry.pin & 0xff;
+                uint8_t expander = entry.pin >> 8;
+
+                switch (entry.type)
+                {
+                    case GpioActionType::DigitalWrite:
+                        GPIOExpanders[expander]->GPIOdigitalWrite(localpin, entry.value);
+                        break;
+                    case GpioActionType::PinMode:
+                        GPIOExpanders[expander]->GPIOpinMode(localpin, entry.value, entry.preset, entry.status);
+                        break;
+                    case GpioActionType::AttachInterrupt:
+                        GPIOExpanders[expander]->GPIOattachInterrupt(localpin, entry.callback, entry.interruptMode);
+                        break;
+                }
+            }
+#endif
         }
 
         std::string Manager::logPrefix()
@@ -128,7 +162,14 @@ namespace OpenKNX
                 logErrorP("GPIOModule::pinMode: invalid pin id %u", pin);
                 return;
             }
-            GPIOExpanders[expander]->GPIOpinMode(localpin, mode, preset, status);
+            if (GPIO_TYPES[expander] == OPENKNX_GPIO_T_EMBEDDED)
+            {
+                GPIOExpanders[expander]->GPIOpinMode(localpin, mode, preset, status);
+            }
+            else
+            {
+                queueI2CAction({pin, GpioActionType::PinMode, mode, preset, status});
+            }
         }
 
         void Manager::digitalWrite(openknx_gpio_number_t pin, int status)
@@ -140,7 +181,14 @@ namespace OpenKNX
                 logErrorP("GPIOModule::digitalWrite: invalid pin id %u", pin);
                 return;
             }
-            GPIOExpanders[expander]->GPIOdigitalWrite(localpin, status);
+            if (GPIO_TYPES[expander] == OPENKNX_GPIO_T_EMBEDDED)
+            {
+                GPIOExpanders[expander]->GPIOdigitalWrite(localpin, status);
+            }
+            else
+            {
+                queueI2CAction({pin, GpioActionType::DigitalWrite, status});
+            }
         }
 
         bool Manager::digitalRead(openknx_gpio_number_t pin)
@@ -155,6 +203,32 @@ namespace OpenKNX
             return GPIOExpanders[expander]->GPIOdigitalRead(localpin);
         }
 
+        int Manager::analogRead(openknx_gpio_number_t pin)
+        {
+            int8_t localpin = pin & 0xff;
+            uint8_t expander = pin >> 8;
+            if (GPIO_TYPES[expander] != OPENKNX_GPIO_T_EMBEDDED)
+            {
+                logErrorP("GPIOModule::analogRead: Not supported for expanders");
+                logErrorP("GPIOModule::analogRead: invalid pin id %u", pin);
+                return -1;
+            }
+            return GPIOExpanders[expander]->GPIOanalogRead(localpin);
+        }
+
+        void Manager::analogWrite(openknx_gpio_number_t pin, int value)
+        {
+            int8_t localpin = pin & 0xff;
+            uint8_t expander = pin >> 8;
+            if (GPIO_TYPES[expander] != OPENKNX_GPIO_T_EMBEDDED)
+            {
+                logErrorP("GPIOModule::analogWrite: Not supported for expanders");
+                logErrorP("GPIOModule::analogWrite: invalid pin id %u", pin);
+                return;
+            }
+            GPIOExpanders[expander]->GPIOanalogWrite(localpin, value);
+        }
+
         void Manager::attachInterrupt(openknx_gpio_number_t pin, std::function<void(openknx_gpio_number_t, bool)> callback, PinStatus mode)
         {
             int8_t localpin = pin & 0xff;
@@ -164,7 +238,15 @@ namespace OpenKNX
                 logErrorP("GPIOModule::attachInterrupt: invalid pin id %u", pin);
                 return;
             }
-            GPIOExpanders[expander]->GPIOattachInterrupt(localpin, callback, mode);
+
+            if (GPIO_TYPES[expander] == OPENKNX_GPIO_T_EMBEDDED)
+            {
+                GPIOExpanders[expander]->GPIOattachInterrupt(localpin, callback, mode);
+            }
+            else
+            {
+                queueI2CAction({pin, GpioActionType::AttachInterrupt, 0, false, 0, callback, mode});
+            }
             return;
         }
     } // namespace GPIO

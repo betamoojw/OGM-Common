@@ -28,9 +28,35 @@ namespace OpenKNX
             void pinMode(openknx_gpio_number_t pin, int mode, bool preset = false, int status = 0);
             void digitalWrite(openknx_gpio_number_t pin, int status);
             bool digitalRead(openknx_gpio_number_t pin);
+            int analogRead(openknx_gpio_number_t pin);
+            void analogWrite(openknx_gpio_number_t pin, int value);
+
             // int attachInterrupt(openknx_gpio_number_t pin, void (*callback)(void), PinStatus mode);
             void attachInterrupt(openknx_gpio_number_t pin, std::function<void(openknx_gpio_number_t, bool)> callback, PinStatus mode);
             bool isInitialized(uint8_t expander);
+
+            enum class GpioActionType
+            {
+                DigitalWrite,
+                PinMode,
+                AttachInterrupt
+            };
+
+            struct GpioQueueEntry
+            {
+                openknx_gpio_number_t pin;
+                GpioActionType type;
+                int value; // für DigitalWrite oder PinMode
+                bool preset = false;
+                int status = 0;
+                std::function<void(openknx_gpio_number_t, bool)> callback;
+                PinStatus interruptMode;
+            };
+           
+            void queueI2CAction(const GpioQueueEntry &entry);
+
+          private:
+            static std::vector<GpioQueueEntry> gpioQueue;
         };
     } // namespace GPIO
 } // namespace OpenKNX

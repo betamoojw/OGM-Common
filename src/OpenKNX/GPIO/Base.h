@@ -21,7 +21,8 @@ namespace OpenKNX
             virtual void GPIOdigitalWrite(uint8_t pin, int status) = 0;
             virtual bool GPIOdigitalRead(uint8_t pin) = 0;
             virtual void GPIOattachInterrupt(uint8_t pin, std::function<void(openknx_gpio_number_t, bool)> callback, PinStatus mode) {}
-
+            virtual int GPIOanalogRead(uint8_t pin) { return -1; }
+            virtual void GPIOanalogWrite(uint8_t pin, int value) {}
             virtual inline const bool isInitialized() { return false; }
             virtual inline void setInitState(const GPIOInitState state) {}
             virtual inline GPIOInitState getInitState() { return GPIOInitState::TypeUnknown; }

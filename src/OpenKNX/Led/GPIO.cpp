@@ -14,8 +14,8 @@ namespace OpenKNX
             _pin = pin;
             _activeOn = activeOn;
 
-            pinMode(_pin, OUTPUT);
-            digitalWrite(_pin, !_activeOn);
+            openknx.gpio.pinMode(_pin, OUTPUT);
+            openknx.gpio.digitalWrite(_pin, !_activeOn);
         }
 
         /*
@@ -33,16 +33,16 @@ namespace OpenKNX
 
             // Need to reset pinMode after using analogWrite
             if (_currentLedBrightness != 0 || _currentLedBrightness != 255)
-                pinMode(_pin, OUTPUT);
+                openknx.gpio.pinMode(_pin, OUTPUT);
 
             if (calcBrightness == 255)
-                digitalWrite(_pin, _activeOn);
+                openknx.gpio.digitalWrite(_pin, _activeOn);
 
             else if (calcBrightness == 0)
-                digitalWrite(_pin, !_activeOn);
+                openknx.gpio.digitalWrite(_pin, !_activeOn);
 
             else
-                analogWrite(_pin, _activeOn ? calcBrightness : (255 - calcBrightness));
+                openknx.gpio.analogWrite(_pin, _activeOn ? calcBrightness : (255 - calcBrightness));
 
             _currentLedBrightness = calcBrightness;
         }
