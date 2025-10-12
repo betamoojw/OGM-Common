@@ -74,6 +74,7 @@ namespace OpenKNX
         Stat::RuntimeStat _runtimeKnxStack;
         Stat::RuntimeStat _runtimeModuleLoop;
         Stat::RuntimeStat _runtimeGPIO;
+        Stat::RuntimeStat _runtimeLeds;
         Stat::RuntimeStat _runtimeTimeManager;
     #ifdef ParamBASE_Latitude
         Stat::RuntimeStat _runtimeSunCalculation;

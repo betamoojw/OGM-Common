@@ -224,6 +224,11 @@ namespace OpenKNX
             _effectMode = true;
         }
 
+        bool Base::isSlow()
+        {
+            return false;
+        }
+
         std::string Base::logPrefix()
         {
             return openknx.logger.buildPrefix("LED", _identifier);

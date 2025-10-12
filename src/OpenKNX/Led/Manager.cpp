@@ -54,7 +54,11 @@ namespace OpenKNX
 
         void Manager::loop()
         {
-
+            if(!_init)
+                return;
+            
+            for (const auto& pair : _slowLeds)
+                pair.second->loop();
         }
 
         void Manager::addLed(Led::Base* led, uint8_t identifier)
@@ -65,7 +69,14 @@ namespace OpenKNX
                 return;
             }
             led->setIdentifier(identifier);
-            _leds[identifier] = led;
+            if(led->isSlow())
+            {
+                _slowLeds[identifier] = led;
+            }
+            else
+            {            
+                _leds[identifier] = led;
+            }
         }
         
 #ifdef OPENKNX_SERIALLED_ENABLE
@@ -140,12 +151,14 @@ namespace OpenKNX
 
         Led::Base* Manager::getLed(uint8_t identifier)
         {
-            return _leds.find(identifier) != _leds.end() ? _leds[identifier] : _dummyLed;
+            return _leds.find(identifier) != _leds.end() ? _leds[identifier] : (_slowLeds.find(identifier) != _slowLeds.end() ? _slowLeds[identifier] : _dummyLed);
         }
 
         void Manager::powerSave(bool active)
         {
             for (const auto& pair : _leds)
+                pair.second->powerSave(active);
+            for (const auto& pair : _slowLeds)
                 pair.second->powerSave(active);
         }
 

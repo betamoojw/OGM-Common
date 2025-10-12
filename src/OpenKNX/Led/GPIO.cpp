@@ -18,8 +18,8 @@ namespace OpenKNX
                 return;
             
             _initialized = true;
-            pinMode(_pin, OUTPUT);
-            digitalWrite(_pin, !_activeOn);
+            openknx.gpio.pinMode(_pin, OUTPUT);
+            openknx.gpio.digitalWrite(_pin, !_activeOn);
         }
 
         /*
@@ -37,20 +37,28 @@ namespace OpenKNX
 
             if (calcBrightness == 255)
             {
-                pinMode(_pin, OUTPUT);
-                digitalWrite(_pin, _activeOn);
+                if(!isSlow())
+                    openknx.gpio.pinMode(_pin, OUTPUT);
+                openknx.gpio.digitalWrite(_pin, _activeOn);
             }
             else if (calcBrightness == 0)
             {
-                pinMode(_pin, OUTPUT);
-                digitalWrite(_pin, !_activeOn);
+                if(!isSlow())
+                    openknx.gpio.pinMode(_pin, OUTPUT);
+                openknx.gpio.digitalWrite(_pin, !_activeOn);
             }
             else
             {
-                analogWrite(_pin, _activeOn ? calcBrightness : (255 - calcBrightness));
+                if(!isSlow())
+                    analogWrite(_pin, _activeOn ? calcBrightness : (255 - calcBrightness));
             }
 
             _currentLedBrightness = calcBrightness;
+        }
+
+        bool GPIO::isSlow()
+        {
+            return (_pin > 0xff);
         }
     } // namespace Led
 } // namespace OpenKNX

@@ -374,6 +374,11 @@ namespace OpenKNX
         openknx.gpio.loop();
         RUNTIME_MEASURE_END(_runtimeGPIO);
 
+        // loop leds
+        RUNTIME_MEASURE_BEGIN(_runtimeLeds);
+        openknx.leds.loop();
+        RUNTIME_MEASURE_END(_runtimeLeds);
+
         // loop timemanager helper
         RUNTIME_MEASURE_BEGIN(_runtimeTimeManager);
         openknx.time.loop();
@@ -890,6 +895,7 @@ namespace OpenKNX
             _runtimeConsole.showStat("__Console", 0, stat, hist);
             _runtimeKnxStack.showStat("__KnxStack", 0, stat, hist);
             _runtimeGPIO.showStat("__GPIO", 0, stat, hist);
+            _runtimeLeds.showStat("__Leds", 0, stat, hist);
             _runtimeTimeManager.showStat("__Time", 0, stat, hist);
     #ifdef ParamBASE_Latitude
             _runtimeSunCalculation.showStat("__Sun", 0, stat, hist);
