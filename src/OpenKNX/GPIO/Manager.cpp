@@ -121,7 +121,7 @@ namespace OpenKNX
 
         void Manager::loop()
         {
-#ifdef OPENKNX_GPIO_NUM
+#if OPENKNX_GPIO_NUM > 0
             noInterrupts();
             auto queueCopy = gpioQueue;
             gpioQueue.clear();
@@ -166,10 +166,12 @@ namespace OpenKNX
             {
                 GPIOExpanders[expander]->GPIOpinMode(localpin, mode, preset, status);
             }
+#if OPENKNX_GPIO_NUM > 0
             else
             {
                 queueI2CAction({pin, GpioActionType::PinMode, mode, preset, status});
             }
+#endif
         }
 
         void Manager::digitalWrite(openknx_gpio_number_t pin, int status)
@@ -185,10 +187,12 @@ namespace OpenKNX
             {
                 GPIOExpanders[expander]->GPIOdigitalWrite(localpin, status);
             }
+#if OPENKNX_GPIO_NUM > 0
             else
             {
                 queueI2CAction({pin, GpioActionType::DigitalWrite, status});
             }
+#endif
         }
 
         bool Manager::digitalRead(openknx_gpio_number_t pin)
@@ -243,10 +247,12 @@ namespace OpenKNX
             {
                 GPIOExpanders[expander]->GPIOattachInterrupt(localpin, callback, mode);
             }
+#if OPENKNX_GPIO_NUM > 0
             else
             {
                 queueI2CAction({pin, GpioActionType::AttachInterrupt, 0, false, 0, callback, mode});
             }
+#endif
             return;
         }
     } // namespace GPIO

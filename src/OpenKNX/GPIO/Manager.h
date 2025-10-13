@@ -41,7 +41,7 @@ namespace OpenKNX
                 PinMode,
                 AttachInterrupt
             };
-
+#if OPENKNX_GPIO_NUM > 0
             struct GpioQueueEntry
             {
                 openknx_gpio_number_t pin;
@@ -52,11 +52,12 @@ namespace OpenKNX
                 std::function<void(openknx_gpio_number_t, bool)> callback;
                 PinStatus interruptMode;
             };
-           
+
             void queueI2CAction(const GpioQueueEntry &entry);
 
           private:
             static std::vector<GpioQueueEntry> gpioQueue;
+#endif
         };
     } // namespace GPIO
 } // namespace OpenKNX
