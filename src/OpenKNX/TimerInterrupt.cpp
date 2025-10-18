@@ -160,10 +160,31 @@ namespace OpenKNX
 
     void TimerInterrupt::processLeds()
     {
-#ifdef OPENKNX_SERIALLED_ENABLE
-    #ifdef ARDUINO_ARCH_ESP32
-        return;
+#if !defined(OPENKNX_SERIALLED_ENABLE) || !defined(ARDUINO_ARCH_ESP32)
+        const uint32_t time10 = _time % 10;
+        if (time10 == 0)
+        {
+            //openknx.progLed.loop();
+
+    #ifdef INFO2_LED_PIN
+            //openknx.info2Led.loop();
     #endif
+    #if defined(OPENKNX_SERIALLED_ENABLE) && defined(ARDUINO_ARCH_RP2040)
+             openknx.ledManager.writeLeds();
+    #endif
+        }
+        else if (time10 == 5)
+        {
+    #ifdef INFO1_LED_PIN
+            //openknx.info1Led.loop();
+    #endif
+    #ifdef INFO3_LED_PIN
+            //openknx.info3Led.loop();
+    #endif
+    #if defined(OPENKNX_SERIALLED_ENABLE) && defined(ARDUINO_ARCH_RP2040)
+             openknx.ledManager.writeLeds();
+    #endif
+        }
 #endif
         openknx.leds.timer();
     }

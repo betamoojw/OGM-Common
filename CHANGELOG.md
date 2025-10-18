@@ -1,8 +1,21 @@
 # Changes
 
-## (upcoming) 1.5.0
+## (upcoming)
+
+* Fix: Do not init the serial in constructor of *Logger*
+* Update: RP2040 Environment
+  * platform: platform-raspberrypi 6af38e2 to 22a4cc6
+  * platform_packages: ramework-arduinopico 4.6.0 to 5.3.0
+* Update Readme: Add `OPENKNX_DEBUGGER` and reorder configuration table
+* Feature: Enable `-DebugBuild` switch for Build-Step.ps1 script
+* Fix: Solve Escaping Warning for Regex in Python Build Helper Scripts
+  
+## 1.5.0: 2025-10-15
+
+* Fix: Require FileTransferClient minimal version 0.2.7 to prevent issues with firmware update resume
+* Fix/Doc: Replace parameters migrated from LOG (to BASE) in Readme 
 * Fix: Log and diagnose messages raise only a fatalError "Buffer overflow", if this really happens
-* Feature: Sun elevation and azimuth can be displayed by diagnose object ("sun elevation", "sun azimuth")
+* Feature: Sun elevation and azimuth can be displayed by diagnose object (`sun elevation`, `sun azimuth`)
 * Feature: Release scripts build now a release with a directory structure per supported Hardware. Provides better overview.
 * Feature: Common contains new module overview with disable option and version information. Needs OpenKNXproducer 3.11.0 at least.
 * Fix: Looptime-Warning-Message is now yellow instead red

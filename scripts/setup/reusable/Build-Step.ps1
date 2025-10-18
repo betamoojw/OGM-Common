@@ -17,6 +17,9 @@
 # This file does not require any changes and is project-independent.
 
 param (
+  [Parameter(Mandatory = $false, HelpMessage="Initiate debug build, -DebugBuild should be first odr last parameter")]
+  [switch]$DebugBuild,
+
   [Parameter(Mandatory = $true)]
   [ValidateNotNullOrEmpty()]
   [string]$pioEnv,
@@ -36,10 +39,11 @@ param (
   [string]$ProjectDir
 )
 
-if ($IsMacOS -or $IsLinux) { ~/.platformio/penv/bin/pio run -e $pioEnv }
-else { ~/.platformio/penv/Scripts/pio.exe run -e $pioEnv }
+$buildMode = if ($DebugBuild) { "debug"} else { "run" }
+if ($IsMacOS -or $IsLinux) { ~/.platformio/penv/bin/pio $buildMode -e $pioEnv }
+else { ~/.platformio/penv/Scripts/pio.exe $buildMode -e $pioEnv }
 if (!$?) {
-  Write-Host "$pioEnv build failed, Release was not built!"
+  Write-Host "$pioEnv build failed, Firmware was not built!"
   exit 1
 }
 
@@ -77,7 +81,7 @@ if ($featureSet -eq "bin") {
   $withOTA = $false;
 } elseif ($featureSet -eq "rp2040-ip" -or $featureSet -eq "rp2350-ip") {
   $withOTA = $true;
-} elseif ($featureSet -ne "uf2" -or $featureSet -eq "rp2040-tp" -or $featureSet -eq "rp2350-tp") {
+} elseif ($featureSet -eq "uf2" -or $featureSet -eq "rp2040-tp" -or $featureSet -eq "rp2350-tp") {
   $withOTA = $false;
 } else {
   Write-Host "ERROR: Wrong featureset $featureSet in Build-Step!"
