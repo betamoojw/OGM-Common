@@ -48,6 +48,8 @@ namespace OpenKNX
             
             for (const auto& pair : _leds)
                 pair.second->init();
+            for (const auto& pair : _i2cLeds)
+                pair.second->init();
 
             _init = true;
         }
@@ -57,7 +59,7 @@ namespace OpenKNX
             if(!_init)
                 return;
             
-            for (const auto& pair : _slowLeds)
+            for (const auto& pair : _i2cLeds)
                 pair.second->loop();
         }
 
@@ -69,9 +71,9 @@ namespace OpenKNX
                 return;
             }
             led->setIdentifier(identifier);
-            if(led->isSlow())
+            if(led->isI2C())
             {
-                _slowLeds[identifier] = led;
+                _i2cLeds[identifier] = led;
             }
             else
             {            
@@ -151,14 +153,15 @@ namespace OpenKNX
 
         Led::Base* Manager::getLed(uint8_t identifier)
         {
-            return _leds.find(identifier) != _leds.end() ? _leds[identifier] : (_slowLeds.find(identifier) != _slowLeds.end() ? _slowLeds[identifier] : _dummyLed);
+            return _leds.find(identifier) != _leds.end() ? _leds[identifier] : (_i2cLeds.find(identifier) != _i2cLeds.end() ? _i2cLeds[identifier] : _dummyLed);
         }
 
         void Manager::powerSave(bool active)
         {
             for (const auto& pair : _leds)
                 pair.second->powerSave(active);
-            for (const auto& pair : _slowLeds)
+
+            for (const auto& pair : _i2cLeds)
                 pair.second->powerSave(active);
         }
 

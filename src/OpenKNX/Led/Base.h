@@ -147,7 +147,7 @@ namespace OpenKNX
              */
             void setIdentifier(uint8_t identifier) { _identifier = identifier; }
 
-            virtual bool isSlow();
+            virtual bool isI2C();
 
             /*
              * Get a logPrefix as string

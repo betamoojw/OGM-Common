@@ -19,7 +19,7 @@ namespace OpenKNX
 
             long getPin() { return _pin; }
 
-            bool isSlow() override;
+            bool isI2C() override;
         };
     } // namespace Led
 } // namespace OpenKNX

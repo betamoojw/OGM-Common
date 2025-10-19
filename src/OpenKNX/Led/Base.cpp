@@ -224,7 +224,7 @@ namespace OpenKNX
             _effectMode = true;
         }
 
-        bool Base::isSlow()
+        bool Base::isI2C()
         {
             return false;
         }

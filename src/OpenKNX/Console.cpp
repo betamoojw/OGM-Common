@@ -148,6 +148,10 @@ namespace OpenKNX
         {
             processPinCommand("dw " + cmd.substr(((cmd.rfind("dwon ", 0) == 0) ? 5 : 6)) + (cmd.rfind("dwon ", 0) == 0 ? " 1" : " 0"));
         }
+        else if (!diagnoseKo && (cmd.compare(0, 5, "leds ") == 0))
+        {
+            processPinCommand(cmd);
+        }
 #endif
 
 #ifdef OPENKNX_RUNTIME_STAT
@@ -197,7 +201,7 @@ namespace OpenKNX
                 size_t readBytes;
                 while ((readBytes = file.readBytes((char*)buffer, sizeof(buffer))) > 0)
                 {
-                     openknx.logger.logHexWithPrefix("Filesystem", buffer, readBytes);
+                    openknx.logger.logHexWithPrefix("Filesystem", buffer, readBytes);
                 }
                 openknx.logger.logDividingLine();
             }
@@ -569,6 +573,7 @@ namespace OpenKNX
         printHelpLine("dr <pin>", "Read digital pin");
         printHelpLine("aw <pin> 0-4095", "Write analog pin");
         printHelpLine("ar <pin>", "Read analog pin");
+        printHelpLine("leds <InfoLed1-3> <action>", "Control Info LEDs");
 #endif
 #if MASK_VERSION == 0x07B0 || MASK_VERSION == 0x091A
         printHelpLine("bcu", "Show BCU status");
@@ -710,13 +715,12 @@ namespace OpenKNX
         openknx.watchdog.deactivate();
 
         openknx.leds.getProgLed()->blinking();
-        if(openknx.leds.getLed(Led::LedType::LED_TYPE_INFO1) != nullptr)
+        if (openknx.leds.getLed(Led::LedType::LED_TYPE_INFO1) != nullptr)
             openknx.leds.getLed(Led::LedType::LED_TYPE_INFO1)->off();
-        if(openknx.leds.getLed(Led::LedType::LED_TYPE_INFO2) != nullptr)
+        if (openknx.leds.getLed(Led::LedType::LED_TYPE_INFO2) != nullptr)
             openknx.leds.getLed(Led::LedType::LED_TYPE_INFO2)->off();
-        if(openknx.leds.getLed(Led::LedType::LED_TYPE_INFO3) != nullptr)
+        if (openknx.leds.getLed(Led::LedType::LED_TYPE_INFO3) != nullptr)
             openknx.leds.getLed(Led::LedType::LED_TYPE_INFO3)->off();
-
 
         if (mode == EraseMode::All || mode == EraseMode::KnxFlash)
         {
@@ -782,11 +786,12 @@ namespace OpenKNX
                     int value = std::stoi(cmd.substr(__pos + 1));
                     if (cmd.compare(0, 2, "dw") == 0 && value <= HIGH)
                     {
-                        openknx.gpio.digitalWrite((pin_size_t)pin, value);
+                        openknx.gpio.digitalWrite((openknx_gpio_number_t)pin, value);
                         openknx.logger.logWithPrefixAndValues("PinCommand", "Write pin %i to %i", pin, value);
                     }
                     else if (cmd.compare(0, 2, "aw") == 0 && value <= 4095)
                     {
+                        // openknx.gpio.analogWrite((openknx_gpio_number_t)pin, value);
                         analogWrite((pin_size_t)pin, value);
                         openknx.logger.logWithPrefixAndValues("PinCommand", "Write pin %i to %i", pin, value);
                     }
@@ -798,9 +803,67 @@ namespace OpenKNX
             }
             else if (cmd.compare(0, 2, "ar") == 0)
             {
+                // openknx.logger.logWithPrefixAndValues("PinCommand", "Read pin %i: %i", pin, openknx.gpio.analogRead((openknx_gpio_number_t)pin));
                 openknx.logger.logWithPrefixAndValues("PinCommand", "Read pin %i: %i", pin, analogRead((pin_size_t)pin));
+            }
+            else if (cmd.compare(0, 5, "leds ") == 0)
+            {
+                // if only "leds ?" or only "leds " then show leds help
+                if (cmd.length() <= 6 || cmd[_pos + 1] == '?')
+                {
+                    openknx.logger.logWithPrefix("leds", "Usage: leds <pin> <action>");
+                    openknx.logger.logWithPrefix("leds", "  <pin>: 1 (InfoLed1), 2 (InfoLed2), 3 (InfoLed3), p/prog (ProgLed)");
+                    openknx.logger.logWithPrefix("leds", "  <action>: on, off, pulsing, blinking, forceon, flashing");
+                    return;
+                }
+
+                size_t start = _pos + 1; while (start < cmd.size() && cmd[start] == ' ') ++start; // skip spaces
+                size_t pinStart = start; while (start < cmd.size() && cmd[start] != ' ') ++start; // read pin
+                size_t pinEnd = start; while (start < cmd.size() && cmd[start] == ' ') ++start; // skip spaces
+                size_t actionStart = start; while (start < cmd.size() && cmd[start] != ' ') ++start; // read action
+                size_t actionEnd = start; // end
+                std::string pinStr = (pinEnd > pinStart) ? cmd.substr(pinStart, pinEnd - pinStart) : "";
+                std::string action = (actionEnd > actionStart) ? cmd.substr(actionStart, actionEnd - actionStart) : "";
+                if (pinStr.empty() || action.empty()) 
+                {
+                    openknx.logger.logWithPrefix("leds", "Syntax: leds <pin> <action>");
+                    return;
+                }
+                Led::LedType ledType;
+                bool isProgLed = false;
+                if (pinStr == "1") ledType = Led::LED_TYPE_INFO1;
+                else if (pinStr == "2") ledType = Led::LED_TYPE_INFO2;
+                else if (pinStr == "3") ledType = Led::LED_TYPE_INFO3;
+                else if (pinStr == "p" || pinStr == "prog") isProgLed = true;
+                else
+                {
+                    openknx.logger.logWithPrefixAndValues("leds", "LED pin '%s' not found", pinStr.c_str());
+                    return;
+                }
+                switch (pinStr.c_str()[0])
+                {
+                    case '1': ledType = Led::LED_TYPE_INFO1; break;
+                    case '2': ledType = Led::LED_TYPE_INFO2; break;
+                    case '3': ledType = Led::LED_TYPE_INFO3; break;
+                    case 'p': isProgLed = true; break;
+                    default: openknx.logger.logWithPrefixAndValues("leds", "LED pin '%s' not found", pinStr.c_str()); return;
+                }
+
+                auto led = isProgLed ? openknx.leds.getProgLed() : openknx.leds.getLed(ledType);
+                if (!led)
+                {
+                    openknx.logger.logWithPrefixAndValues("leds", "LED '%s' nicht initialisiert", pinStr.c_str());
+                    return;
+                }
+                if (action == "on") led->on();
+                else if (action == "off") led->off();
+                else if (action == "pulsing") led->pulsing();
+                else if (action == "blinking") led->blinking();
+                else if (action == "forceon") led->forceOn();
+                else if (action == "flashing") led->flash();
+                else openknx.logger.logWithPrefixAndValues("leds", "LED action '%s' unbekannt", action.c_str());
             }
         }
     }
-#endif
+#endif // ARDUINO_ARCH_SAMD
 } // namespace OpenKNX

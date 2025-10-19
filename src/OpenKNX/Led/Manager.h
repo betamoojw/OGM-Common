@@ -41,7 +41,7 @@ namespace OpenKNX
           protected:
             Led::Base* _dummyLed = new GPIO(-1);
             std::unordered_map<uint8_t, Led::Base*> _leds;
-            std::unordered_map<uint8_t, Led::Base*> _slowLeds;
+            std::unordered_map<uint8_t, Led::Base*> _i2cLeds;
             bool _init = false;
 #ifdef OPENKNX_SERIALLED_ENABLE
             Led::SerialLedManager* _serialLedManager = nullptr;
