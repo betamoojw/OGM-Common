@@ -1,6 +1,7 @@
 #include "OpenKNX/Console.h"
 #include "OpenKNX/Facade.h"
 #include "OpenKNX/Flash/Driver.h"
+#include "OpenKNX/i2c/test/Benchmark.h"
 
 #if OPENKNX_LITTLE_FS
     #include "LittleFS.h"
@@ -148,9 +149,13 @@ namespace OpenKNX
         {
             processPinCommand("dw " + cmd.substr(((cmd.rfind("dwon ", 0) == 0) ? 5 : 6)) + (cmd.rfind("dwon ", 0) == 0 ? " 1" : " 0"));
         }
-        else if (!diagnoseKo && (cmd.compare(0, 5, "leds ") == 0))
+        else if (!diagnoseKo && (cmd.compare(0, 5, "leds ") == 0 || cmd.compare(0, 4, "leds") == 0))
         {
-            processPinCommand(cmd);
+            processLedsCommand(cmd);
+        }
+        else if (!diagnoseKo && (cmd.compare(0, 4, "i2c ") == 0 || cmd.compare(0, 3, "i2c") == 0))
+        {
+            processI2cCommand(cmd);
         }
 #endif
 
@@ -573,8 +578,9 @@ namespace OpenKNX
         printHelpLine("dr <pin>", "Read digital pin");
         printHelpLine("aw <pin> 0-4095", "Write analog pin");
         printHelpLine("ar <pin>", "Read analog pin");
-        printHelpLine("leds <InfoLed1-3> <action>", "Control Info LEDs");
+        printHelpLine("leds", "LEDs control. Use 'leds' for help");
 #endif
+        printHelpLine("i2c", "I2C bus commands. Use 'i2c' for help");
 #if MASK_VERSION == 0x07B0 || MASK_VERSION == 0x091A
         printHelpLine("bcu", "Show BCU status");
         printHelpLine("bcu mon", "Start BCU monitoring");
@@ -806,64 +812,856 @@ namespace OpenKNX
                 // openknx.logger.logWithPrefixAndValues("PinCommand", "Read pin %i: %i", pin, openknx.gpio.analogRead((openknx_gpio_number_t)pin));
                 openknx.logger.logWithPrefixAndValues("PinCommand", "Read pin %i: %i", pin, analogRead((pin_size_t)pin));
             }
-            else if (cmd.compare(0, 5, "leds ") == 0)
-            {
-                // if only "leds ?" or only "leds " then show leds help
-                if (cmd.length() <= 6 || cmd[_pos + 1] == '?')
+        }
+    } // processPinCommand
+#endif // ARDUINO_ARCH_SAMD
+
+    void Console::processLedsCommand(const std::string& cmd)
+    {
+        std::string args = (cmd.length() > 5) ? cmd.substr(5) : "";
+
+        // Trim
+        auto trimStart = args.find_first_not_of(" ");
+        if (trimStart != std::string::npos)
+        {
+            auto trimEnd = args.find_last_not_of(" ");
+            args = args.substr(trimStart, trimEnd - trimStart + 1);
+        }
+        else
+            args = "";
+
+        // Show help if empty or "?"
+        if (args.empty() || args == "?")
+        {
+            openknx.logger.begin();
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("================================= Help: LED Control ================================="); // 88 characters
+            openknx.logger.color(0);
+            openknx.logger.log("Command(s)               Description");
+            openknx.console.printHelpLine("leds <pin> <action>", "Control LEDs on the device");
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Available Pins:");
+            openknx.logger.color(0);
+            openknx.console.printHelpLine("  1, 2, 3", "Info LEDs 1-3");
+            openknx.console.printHelpLine("  p, prog", "Programming LED");
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Available Actions:");
+            openknx.logger.color(0);
+            openknx.console.printHelpLine("  on", "Turn LED on");
+            openknx.console.printHelpLine("  off", "Turn LED off");
+            openknx.console.printHelpLine("  pulse", "Pulsing effect");
+            openknx.console.printHelpLine("  blink", "Blinking effect");
+            openknx.console.printHelpLine("  forceon", "Force LED on (ignore other states)");
+            openknx.console.printHelpLine("  flash [ms]", "Flash LED (default: 100ms)");
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Examples:");
+            openknx.logger.color(0);
+            openknx.console.printHelpLine("  leds 1 on", "Turn Info LED 1 on");
+            openknx.console.printHelpLine("  leds prog blink", "Make Programming LED blink");
+            openknx.console.printHelpLine("  leds 2 flash 500", "Flash Info LED 2 for 500ms");
+            openknx.console.printHelpLine("  leds 3 pulse", "Make Info LED 3 pulsing");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("---------------------------------------------------------------------------------"); // 88 characters
+            openknx.logger.color(0);
+            openknx.logger.end();
+            return;
+        }
+
+        // Split args into tokens
+        std::vector<std::string> tokens;
+        size_t pos = 0;
+        while (pos < args.length())
+        {
+            // Skip spaces
+            while (pos < args.length() && args[pos] == ' ')
+                pos++;
+            if (pos >= args.length()) break;
+
+            // Extract token
+            size_t tokenStart = pos;
+            while (pos < args.length() && args[pos] != ' ')
+                pos++;
+            tokens.push_back(args.substr(tokenStart, pos - tokenStart));
+        }
+
+        // Validate token count
+        if (tokens.size() < 2)
+        {
+            openknx.logger.logWithPrefix("leds", "Error: Missing arguments");
+            openknx.logger.logWithPrefix("leds", "Usage: leds <pin> <action> [duration]");
+            openknx.logger.logWithPrefix("leds", "Type 'leds ?' for help");
+            return;
+        }
+
+        std::string pinStr = tokens[0];
+        std::string action = tokens[1];
+        uint16_t duration = (tokens.size() > 2) ? std::atoi(tokens[2].c_str()) : 100;
+
+        // Map pin string to LED type
+        Led::LedType ledType;
+        if (pinStr == "1")
+            ledType = Led::LED_TYPE_INFO1;
+        else if (pinStr == "2")
+            ledType = Led::LED_TYPE_INFO2;
+        else if (pinStr == "3")
+            ledType = Led::LED_TYPE_INFO3;
+        else if (pinStr == "p" || pinStr == "prog")
+            ledType = Led::LED_TYPE_PROG;
+        else
+        {
+            openknx.logger.logWithPrefixAndValues("leds", "Error: Unknown LED pin '%s'", pinStr.c_str());
+            openknx.logger.logWithPrefix("leds", "Valid pins: 1, 2, 3, p, prog");
+            openknx.logger.logWithPrefix("leds", "Type 'leds ?' for help");
+            return;
+        }
+
+        // Get LED instance
+        auto led = openknx.leds.getLed(ledType);
+        if (!led)
+        {
+            openknx.logger.logWithPrefixAndValues("leds", "Error: LED '%s' not initialized", pinStr.c_str());
+            return;
+        }
+
+        // Execute action
+        if (action == "on")
+            led->on();
+        else if (action == "off")
+            led->off();
+        else if (action == "pulse")
+            led->pulsing();
+        else if (action == "blink")
+            led->blinking();
+        else if (action == "forceon")
+            led->forceOn();
+        else if (action == "flash")
+            led->flash(duration);
+        else
+        {
+            openknx.logger.logWithPrefixAndValues("leds", "Error: Unknown action '%s'", action.c_str());
+            openknx.logger.logWithPrefix("leds", "Valid actions: on, off, pulse, blink, forceon, flash");
+            openknx.logger.logWithPrefix("leds", "Type 'leds ?' for help");
+            return;
+        }
+
+        // Success feedback
+        openknx.logger.logWithPrefixAndValues("leds", "LED %s -> %s %s",
+                                              pinStr.c_str(),
+                                              action.c_str(),
+                                              (action == "flash" ? std::to_string(duration).append("ms").c_str() : ""));
+    } // processLedsCommand
+
+    void Console::processI2cCommand(const std::string& cmd)
+    {
+        std::string args = (cmd.length() > 4) ? cmd.substr(4) : "";
+
+        // Trim
+        auto trimStart = args.find_first_not_of(" ");
+        if (trimStart != std::string::npos)
+        {
+            auto trimEnd = args.find_last_not_of(" ");
+            args = args.substr(trimStart, trimEnd - trimStart + 1);
+        }
+        else
+            args = "";
+
+        // Show help if empty or "?"
+        if (args.empty() || args == "?")
+        {
+            openknx.logger.begin();
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("================================ Help: I2C Control =============================="); // 88 characters
+            openknx.logger.color(0);
+            openknx.logger.log("Command(s)               Description");
+            openknx.console.printHelpLine("i2c status", "Show all configured I2C buses");
+            openknx.console.printHelpLine("i2c scan [bus]", "Scan bus for devices (all or specific)");
+            openknx.console.printHelpLine("i2c info <bus>", "Show detailed bus information");
+#ifdef OPENKNX_I2C_BENCHMARK
+            openknx.console.printHelpLine("i2c bench <type> [bus] [addr]", "Run benchmarks");
+#endif
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Available Buses:");
+            openknx.logger.color(0);
+#ifdef OPENKNX_WIRE_PIO
+            openknx.console.printHelpLine("  wire_pio", "WIRE_PIO (PIO I2C)");
+#endif
+#ifdef OPENKNX_WIRE1_PIO
+            openknx.console.printHelpLine("  wire1_pio", "WIRE1_PIO (PIO I2C)");
+#endif
+#ifdef OPENKNX_WIRE
+            openknx.console.printHelpLine("  wire", "WIRE (Hardware I2C)");
+#endif
+#ifdef OPENKNX_WIRE1
+            openknx.console.printHelpLine("  wire1", "WIRE1 (Hardware I2C)");
+#endif
+            openknx.console.printHelpLine("  all", "All configured buses");
+
+#ifdef OPENKNX_I2C_BENCHMARK
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Benchmark Types:");
+            openknx.logger.color(0);
+            openknx.console.printHelpLine("  quick", "Quick performance test (throughput + latency)");
+            openknx.console.printHelpLine("  full", "Full benchmark suite (all tests)");
+            openknx.console.printHelpLine("  speed", "Speed comparison at different frequencies");
+            openknx.console.printHelpLine("  stability", "Error rate testing");
+            openknx.console.printHelpLine("  display", "Display update simulation");
+            openknx.console.printHelpLine("  restart", "Repeated start test");
+    #if defined(OPENKNX_WIRE_PIO) && defined(OPENKNX_WIRE)
+            openknx.console.printHelpLine("  compare", "PIO vs Hardware comparison");
+    #endif
+#endif
+
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("Examples:");
+            openknx.logger.color(0);
+            openknx.console.printHelpLine("  i2c status", "Show all I2C buses configuration");
+            openknx.console.printHelpLine("  i2c scan wire_pio", "Scan WIRE_PIO for devices");
+            openknx.console.printHelpLine("  i2c scan all", "Scan all buses");
+            openknx.console.printHelpLine("  i2c info wire", "Show WIRE bus details");
+#ifdef OPENKNX_I2C_BENCHMARK
+            openknx.console.printHelpLine("  i2c bench quick wire_pio", "Quick benchmark on WIRE_PIO");
+            openknx.console.printHelpLine("  i2c bench full all", "Full benchmark on all buses");
+            openknx.console.printHelpLine("  i2c bench speed wire 0x3C", "Speed test on WIRE at address 0x3C");
+    #if defined(OPENKNX_WIRE_PIO) && defined(OPENKNX_WIRE)
+            openknx.console.printHelpLine("  i2c bench compare", "Compare PIO vs Hardware");
+    #endif
+#endif
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("---------------------------------------------------------------------------------"); // 88 characters
+            openknx.logger.log(" WARNING: Running these commands will interfere with any ongoing I2C operations!");
+            openknx.logger.log(" !! DO NOT !! use on a production system. Those are for testing purposes only.");
+            openknx.logger.log("---------------------------------------------------------------------------------"); // 88 characters
+            openknx.logger.color(0);
+            openknx.logger.end();
+            return;
+        }
+
+        // Split args into tokens
+        std::vector<std::string> tokens;
+        size_t pos = 0;
+        while (pos < args.length())
+        {
+            while (pos < args.length() && args[pos] == ' ')
+                pos++;
+            if (pos >= args.length()) break;
+
+            size_t tokenStart = pos;
+            while (pos < args.length() && args[pos] != ' ')
+                pos++;
+            tokens.push_back(args.substr(tokenStart, pos - tokenStart));
+        }
+
+        if (tokens.size() == 0)
+        {
+            openknx.logger.logWithPrefix("i2c", "Error: Missing command");
+            openknx.logger.logWithPrefix("i2c", "Type 'i2c ?' for help");
+            return;
+        }
+
+        std::string command = tokens[0];
+
+        // ========================================
+        // STATUS COMMAND
+        // ========================================
+        if (command == "status")
+        {
+            openknx.logger.begin();
+            openknx.logger.log("");
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("========================================");
+            openknx.logger.log("  I2C Bus Configuration");
+            openknx.logger.log("========================================");
+            openknx.logger.color(0);
+
+            int busCount = 0;
+
+#ifdef OPENKNX_WIRE_PIO
+            busCount++;
+            openknx.logger.log("");
+            openknx.logger.logWithValues("[%d] WIRE_PIO (PIO I2C)", busCount);
+            openknx.logger.logWithValues("    PIO:    PIO%d", WIRE_PIO.getPioIndex());
+            openknx.logger.logWithValues("    SM:     %d", WIRE_PIO.getStateMachineNumber());
+            openknx.logger.logWithValues("    Offset: 0x%02X", WIRE_PIO.getOffset());
+            openknx.logger.logWithValues("    SDA:    GPIO %d", OPENKNX_WIRE_PIO_SDA_PIN);
+            openknx.logger.logWithValues("    SCL:    GPIO %d", OPENKNX_WIRE_PIO_SCL_PIN);
+            openknx.logger.logWithValues("    Clock:  %d kHz", OPENKNX_WIRE_PIO_CLOCK / 1000);
+#endif
+
+#ifdef OPENKNX_WIRE1_PIO
+            busCount++;
+            openknx.logger.log("");
+            openknx.logger.logWithValues("[%d] WIRE1_PIO (PIO I2C)", busCount);
+            openknx.logger.logWithValues("    PIO:    PIO%d", WIRE1_PIO.getPioIndex());
+            openknx.logger.logWithValues("    SM:     %d", WIRE1_PIO.getStateMachineNumber());
+            openknx.logger.logWithValues("    Offset: 0x%02X", WIRE1_PIO.getOffset());
+            openknx.logger.logWithValues("    SDA:    GPIO %d", OPENKNX_WIRE1_PIO_SDA_PIN);
+            openknx.logger.logWithValues("    SCL:    GPIO %d", OPENKNX_WIRE1_PIO_SCL_PIN);
+            openknx.logger.logWithValues("    Clock:  %d kHz", OPENKNX_WIRE1_PIO_CLOCK / 1000);
+#endif
+
+#ifdef OPENKNX_WIRE
+            busCount++;
+            openknx.logger.log("");
+            openknx.logger.logWithValues("[%d] WIRE (Hardware I2C)", busCount);
+            openknx.logger.logWithValues("    Type:   Hardware I2C0");
+            openknx.logger.logWithValues("    SDA:    GPIO %d", OPENKNX_WIRE_SDA_PIN);
+            openknx.logger.logWithValues("    SCL:    GPIO %d", OPENKNX_WIRE_SCL_PIN);
+            openknx.logger.logWithValues("    Clock:  %d kHz", OPENKNX_WIRE_CLOCK / 1000);
+#endif
+
+#ifdef OPENKNX_WIRE1
+            busCount++;
+            openknx.logger.log("");
+            openknx.logger.logWithValues("[%d] WIRE1 (Hardware I2C)", busCount);
+            openknx.logger.logWithValues("    Type:   Hardware I2C1");
+            openknx.logger.logWithValues("    SDA:    GPIO %d", OPENKNX_WIRE1_SDA_PIN);
+            openknx.logger.logWithValues("    SCL:    GPIO %d", OPENKNX_WIRE1_SCL_PIN);
+            openknx.logger.logWithValues("    Clock:  %d kHz", OPENKNX_WIRE1_CLOCK / 1000);
+#endif
+
+            openknx.logger.log("");
+            openknx.logger.logWithValues("Total buses: %d", busCount);
+            openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+            openknx.logger.log("========================================");
+            openknx.logger.color(0);
+            openknx.logger.end();
+            return;
+        }
+
+#ifdef OPENKNX_I2C_BENCHMARK
+        OpenKNX::I2C::Benchmark bench;
+#endif
+        // ========================================
+        // SCAN COMMAND
+        // ========================================
+        if (command == "scan")
+        {
+            std::string busName = tokens.size() > 1 ? tokens[1] : "all";
+
+            auto scanBus = [this](TwoWire& wire, const char* name) {
+                openknx.logger.begin();
+                openknx.logger.logWithValues("Scanning %s...", name);
+                openknx.logger.log("");
+                openknx.logger.log("     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F");
+
+                int found = 0;
+                char line[100];
+
+                for (uint8_t addr = 0; addr < 0x80; addr++)
                 {
-                    openknx.logger.logWithPrefix("leds", "Usage: leds <pin> <action>");
-                    openknx.logger.logWithPrefix("leds", "  <pin>: 1 (InfoLed1), 2 (InfoLed2), 3 (InfoLed3), p/prog (ProgLed)");
-                    openknx.logger.logWithPrefix("leds", "  <action>: on, off, pulsing, blinking, forceon, flashing");
-                    return;
+                    if (addr % 16 == 0)
+                    {
+                        snprintf(line, sizeof(line), "%02X: ", addr);
+                    }
+
+                    // Skip reserved
+                    if ((addr & 0x78) == 0 || (addr & 0x78) == 0x78)
+                    {
+                        strncat(line, " . ", sizeof(line) - strlen(line) - 1);
+                    }
+                    else
+                    {
+                        wire.beginTransmission(addr);
+                        uint8_t error = wire.endTransmission(false);
+
+                        char temp[5];
+                        if (error == 0)
+                        {
+                            snprintf(temp, sizeof(temp), " %02X", addr);
+                            found++;
+                        }
+                        else
+                        {
+                            snprintf(temp, sizeof(temp), " --");
+                        }
+                        strncat(line, temp, sizeof(line) - strlen(line) - 1);
+                    }
+
+                    if (addr % 16 == 15)
+                    {
+                        openknx.logger.log(line);
+                        line[0] = '\0'; // Reset line
+                    }
                 }
 
-                size_t start = _pos + 1; while (start < cmd.size() && cmd[start] == ' ') ++start; // skip spaces
-                size_t pinStart = start; while (start < cmd.size() && cmd[start] != ' ') ++start; // read pin
-                size_t pinEnd = start; while (start < cmd.size() && cmd[start] == ' ') ++start; // skip spaces
-                size_t actionStart = start; while (start < cmd.size() && cmd[start] != ' ') ++start; // read action
-                size_t actionEnd = start; // end
-                std::string pinStr = (pinEnd > pinStart) ? cmd.substr(pinStart, pinEnd - pinStart) : "";
-                std::string action = (actionEnd > actionStart) ? cmd.substr(actionStart, actionEnd - actionStart) : "";
-                if (pinStr.empty() || action.empty()) 
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.logWithValues("Found %d device(s) on %s", found, name);
+                openknx.logger.color(0);
+                openknx.logger.log("");
+                openknx.logger.end();
+            };
+
+            if (busName == "all")
+            {
+                openknx.logger.begin();
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.log("  Scanning all I2C buses");
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                
+
+#ifdef OPENKNX_WIRE_PIO
+                //bench.scanBusDetailed(WIRE_PIO, "WIRE_PIO");
+                scanBus(WIRE_PIO, "WIRE_PIO");
+#endif
+#ifdef OPENKNX_WIRE1_PIO
+                //bench.scanBusDetailed(WIRE1_PIO, "WIRE1_PIO");
+                scanBus(WIRE1_PIO, "WIRE1_PIO");
+#endif
+#ifdef OPENKNX_WIRE
+                //bench.scanBusDetailed(WIRE, "WIRE");
+                scanBus(WIRE, "WIRE");
+#endif
+#ifdef OPENKNX_WIRE1
+                //bench.scanBusDetailed(WIRE1, "WIRE1");
+                scanBus(WIRE1, "WIRE1");
+#endif
+            }
+            else
+            {
+#ifdef OPENKNX_WIRE_PIO
+                if (busName == "wire_pio")
                 {
-                    openknx.logger.logWithPrefix("leds", "Syntax: leds <pin> <action>");
+                    scanBus(WIRE_PIO, "WIRE_PIO");
                     return;
                 }
-                Led::LedType ledType;
-                bool isProgLed = false;
-                if (pinStr == "1") ledType = Led::LED_TYPE_INFO1;
-                else if (pinStr == "2") ledType = Led::LED_TYPE_INFO2;
-                else if (pinStr == "3") ledType = Led::LED_TYPE_INFO3;
-                else if (pinStr == "p" || pinStr == "prog") isProgLed = true;
+#endif
+#ifdef OPENKNX_WIRE1_PIO
+                if (busName == "wire1_pio")
+                {
+                    scanBus(WIRE1_PIO, "WIRE1_PIO");
+                    return;
+                }
+#endif
+#ifdef OPENKNX_WIRE
+                if (busName == "wire")
+                {
+                    scanBus(WIRE, "WIRE");
+                    return;
+                }
+#endif
+#ifdef OPENKNX_WIRE1
+                if (busName == "wire1")
+                {
+                    scanBus(WIRE1, "WIRE1");
+                    return;
+                }
+#endif
+
+                openknx.logger.logWithValues("Error: Unknown bus '%s'", busName.c_str());
+                openknx.logger.log("Available: all, wire_pio, wire1_pio, wire, wire1");
+                openknx.logger.end();
+            }
+            return;
+        }
+
+        // ========================================
+        // INFO COMMAND
+        // ========================================
+        if (command == "info")
+        {
+            if (tokens.size() < 2)
+            {
+                openknx.logger.logWithPrefix("i2c", "Error: Missing bus name");
+                openknx.logger.logWithPrefix("i2c", "Usage: i2c info <bus>");
+                return;
+            }
+
+            std::string busName = tokens[1];
+
+#ifdef OPENKNX_WIRE_PIO
+            if (busName == "wire_pio")
+            {
+                openknx.logger.begin();
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.log("  WIRE_PIO Details");
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.log("Type:      PIO I2C");
+                openknx.logger.logWithValues("PIO:       PIO%d", WIRE_PIO.getPioIndex());
+                openknx.logger.logWithValues("SM:        %d", WIRE_PIO.getStateMachineNumber());
+                openknx.logger.logWithValues("Offset:    0x%02X", WIRE_PIO.getOffset());
+                openknx.logger.logWithValues("SDA:       GPIO %d", OPENKNX_WIRE_PIO_SDA_PIN);
+                openknx.logger.logWithValues("SCL:       GPIO %d", OPENKNX_WIRE_PIO_SCL_PIN);
+                openknx.logger.logWithValues("Clock:     %d Hz", OPENKNX_WIRE_PIO_CLOCK);
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.end();
+                return;
+            }
+#endif
+
+#ifdef OPENKNX_WIRE1_PIO
+            if (busName == "wire1_pio")
+            {
+                openknx.logger.begin();
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.log("  WIRE1_PIO Details");
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.logWithPrefix("i2c", "Type:      PIO I2C");
+                openknx.logger.logWithPrefixAndValues("i2c", "PIO:       PIO%d", WIRE1_PIO.getPioIndex());
+                openknx.logger.logWithPrefixAndValues("i2c", "SM:        %d", WIRE1_PIO.getStateMachineNumber());
+                openknx.logger.logWithPrefixAndValues("i2c", "Offset:    0x%02X", WIRE1_PIO.getOffset());
+                openknx.logger.logWithPrefixAndValues("i2c", "SDA:       GPIO %d", OPENKNX_WIRE1_PIO_SDA_PIN);
+                openknx.logger.logWithPrefixAndValues("i2c", "SCL:       GPIO %d", OPENKNX_WIRE1_PIO_SCL_PIN);
+                openknx.logger.logWithPrefixAndValues("i2c", "Clock:     %d Hz", OPENKNX_WIRE1_PIO_CLOCK);
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.end();
+                return;
+            }
+#endif
+
+#ifdef OPENKNX_WIRE
+            if (busName == "wire")
+            {
+                openknx.logger.begin();
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.log("  WIRE Details");
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.log("Type:      Hardware I2C0");
+                openknx.logger.logWithValues("SDA:       GPIO %d", OPENKNX_WIRE_SDA_PIN);
+                openknx.logger.logWithValues("SCL:       GPIO %d", OPENKNX_WIRE_SCL_PIN);
+                openknx.logger.logWithValues("Clock:     %d Hz", OPENKNX_WIRE_CLOCK);
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.end();
+                return;
+            }
+#endif
+
+#ifdef OPENKNX_WIRE1
+            if (busName == "wire1")
+            {
+                openknx.logger.begin();
+                openknx.logger.log("");
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.log("  WIRE1 Details");
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.log("Type:      Hardware I2C1");
+                openknx.logger.logWithValues("SDA:       GPIO %d", OPENKNX_WIRE1_SDA_PIN);
+                openknx.logger.logWithValues("SCL:       GPIO %d", OPENKNX_WIRE1_SCL_PIN);
+                openknx.logger.logWithValues("Clock:     %d Hz", OPENKNX_WIRE1_CLOCK);
+                openknx.logger.color(CONSOLE_HEADLINE_COLOR);
+                openknx.logger.log("========================================");
+                openknx.logger.color(0);
+                openknx.logger.end();
+                return;
+            }
+#endif
+
+            openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+            return;
+        }
+
+#ifdef OPENKNX_I2C_BENCHMARK
+        // ========================================
+        // BENCH COMMAND
+        // ========================================
+        if (command == "bench")
+        {
+            if (tokens.size() < 2)
+            {
+                openknx.logger.logWithPrefix("i2c", "Error: Missing benchmark type");
+                openknx.logger.logWithPrefix("i2c", "Usage: i2c bench <type> [bus] [addr]");
+                openknx.logger.logWithPrefix("i2c", "Types: quick, full, speed, stability, display, restart, compare");
+                return;
+            }
+
+            std::string benchType = tokens[1];
+            std::string busName = tokens.size() > 2 ? tokens[2] : "all";
+            uint8_t addr = 0x3C; // Default
+
+            if (tokens.size() > 3)
+            {
+                addr = (uint8_t)strtol(tokens[3].c_str(), NULL, 0);
+            }
+
+            // Quick benchmark
+            if (benchType == "quick")
+            {
+                auto quickBench = [addr, &bench](TwoWire& wire, const char* name) {
+                    openknx.logger.logWithPrefixAndValues("i2c", "Quick benchmark: %s (addr 0x%02X)", name, addr);
+
+                    bench.benchmarkThroughput(wire, name, addr, 128, 100);
+                    bench.benchmarkLatency(wire, name, addr);
+                };
+
+                if (busName == "all")
+                {
+    #ifdef OPENKNX_WIRE_PIO
+                    quickBench(WIRE_PIO, "WIRE_PIO");
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                    quickBench(WIRE1_PIO, "WIRE1_PIO");
+    #endif
+    #ifdef OPENKNX_WIRE
+                    quickBench(WIRE, "WIRE");
+    #endif
+    #ifdef OPENKNX_WIRE1
+                    quickBench(WIRE1, "WIRE1");
+    #endif
+                }
                 else
                 {
-                    openknx.logger.logWithPrefixAndValues("leds", "LED pin '%s' not found", pinStr.c_str());
-                    return;
+    #ifdef OPENKNX_WIRE_PIO
+                    if (busName == "wire_pio")
+                    {
+                        quickBench(WIRE_PIO, "WIRE_PIO");
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                    if (busName == "wire1_pio")
+                    {
+                        quickBench(WIRE1_PIO, "WIRE1_PIO");
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE
+                    if (busName == "wire")
+                    {
+                        quickBench(WIRE, "WIRE");
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                    if (busName == "wire1")
+                    {
+                        quickBench(WIRE1, "WIRE1");
+                        return;
+                    }
+    #endif
+                    openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
                 }
-                switch (pinStr.c_str()[0])
-                {
-                    case '1': ledType = Led::LED_TYPE_INFO1; break;
-                    case '2': ledType = Led::LED_TYPE_INFO2; break;
-                    case '3': ledType = Led::LED_TYPE_INFO3; break;
-                    case 'p': isProgLed = true; break;
-                    default: openknx.logger.logWithPrefixAndValues("leds", "LED pin '%s' not found", pinStr.c_str()); return;
-                }
-
-                auto led = isProgLed ? openknx.leds.getProgLed() : openknx.leds.getLed(ledType);
-                if (!led)
-                {
-                    openknx.logger.logWithPrefixAndValues("leds", "LED '%s' nicht initialisiert", pinStr.c_str());
-                    return;
-                }
-                if (action == "on") led->on();
-                else if (action == "off") led->off();
-                else if (action == "pulsing") led->pulsing();
-                else if (action == "blinking") led->blinking();
-                else if (action == "forceon") led->forceOn();
-                else if (action == "flashing") led->flash();
-                else openknx.logger.logWithPrefixAndValues("leds", "LED action '%s' unbekannt", action.c_str());
+                return;
             }
+
+            // Full benchmark
+            if (benchType == "full")
+            {
+                if (busName == "all")
+                {
+                    openknx.logger.logWithPrefix("i2c", "Running full benchmark on all buses...");
+                    openknx.logger.logWithPrefix("i2c", "This will take several minutes!");
+                    bench.runAllBenchmarks();
+                }
+                else
+                {
+    #ifdef OPENKNX_WIRE_PIO
+                    if (busName == "wire_pio")
+                    {
+                        bench.runBenchmark(WIRE_PIO, "WIRE_PIO", addr);
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                    if (busName == "wire1_pio")
+                    {
+                        bench.runBenchmark(WIRE1_PIO, "WIRE1_PIO", addr);
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE
+                    if (busName == "wire")
+                    {
+                        bench.runBenchmark(WIRE, "WIRE", addr);
+                        return;
+                    }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                    if (busName == "wire1")
+                    {
+                        bench.runBenchmark(WIRE1, "WIRE1", addr);
+                        return;
+                    }
+    #endif
+                    openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+                }
+                return;
+            }
+
+            // Speed comparison
+            if (benchType == "speed")
+            {
+    #ifdef OPENKNX_WIRE_PIO
+                if (busName == "wire_pio")
+                {
+                    bench.benchmarkSpeedComparison(WIRE_PIO, "WIRE_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                if (busName == "wire1_pio")
+                {
+                    bench.benchmarkSpeedComparison(WIRE1_PIO, "WIRE1_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE
+                if (busName == "wire")
+                {
+                    bench.benchmarkSpeedComparison(WIRE, "WIRE", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                if (busName == "wire1")
+                {
+                    bench.benchmarkSpeedComparison(WIRE1, "WIRE1", addr);
+                    return;
+                }
+    #endif
+                openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+                return;
+            }
+
+            // Stability
+            if (benchType == "stability")
+            {
+    #ifdef OPENKNX_WIRE_PIO
+                if (busName == "wire_pio")
+                {
+                    bench.benchmarkStability(WIRE_PIO, "WIRE_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                if (busName == "wire1_pio")
+                {
+                    bench.benchmarkStability(WIRE1_PIO, "WIRE1_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE
+                if (busName == "wire")
+                {
+                    bench.benchmarkStability(WIRE, "WIRE", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                if (busName == "wire1")
+                {
+                    bench.benchmarkStability(WIRE1, "WIRE1", addr);
+                    return;
+                }
+    #endif
+                openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+                return;
+            }
+
+            // Display update
+            if (benchType == "display")
+            {
+    #ifdef OPENKNX_WIRE_PIO
+                if (busName == "wire_pio")
+                {
+                    bench.benchmarkDisplayUpdate(WIRE_PIO, "WIRE_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                if (busName == "wire1_pio")
+                {
+                    bench.benchmarkDisplayUpdate(WIRE1_PIO, "WIRE1_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE
+                if (busName == "wire")
+                {
+                    bench.benchmarkDisplayUpdate(WIRE, "WIRE", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                if (busName == "wire1")
+                {
+                    bench.benchmarkDisplayUpdate(WIRE1, "WIRE1", addr);
+                    return;
+                }
+    #endif
+                openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+                return;
+            }
+
+            // Repeated start
+            if (benchType == "restart")
+            {
+    #ifdef OPENKNX_WIRE_PIO
+                if (busName == "wire_pio")
+                {
+                    bench.testRepeatedStart(WIRE_PIO, "WIRE_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1_PIO
+                if (busName == "wire1_pio")
+                {
+                    bench.testRepeatedStart(WIRE1_PIO, "WIRE1_PIO", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE
+                if (busName == "wire")
+                {
+                    bench.testRepeatedStart(WIRE, "WIRE", addr);
+                    return;
+                }
+    #endif
+    #ifdef OPENKNX_WIRE1
+                if (busName == "wire1")
+                {
+                    bench.testRepeatedStart(WIRE1, "WIRE1", addr);
+                    return;
+                }
+    #endif
+                openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown bus '%s'", busName.c_str());
+                return;
+            }
+
+    #if defined(OPENKNX_WIRE_PIO) && defined(OPENKNX_WIRE)
+            // Compare PIO vs Hardware
+            if (benchType == "compare")
+            {
+                openknx.logger.logWithPrefix("i2c", "Comparing PIO vs Hardware...");
+                bench.comparePIOvsHardware(addr);
+                return;
+            }
+    #endif
+
+            openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown benchmark type '%s'", benchType.c_str());
+            openknx.logger.logWithPrefix("i2c", "Available: quick, full, speed, stability, display, restart, compare");
+            return;
         }
-    }
-#endif // ARDUINO_ARCH_SAMD
+#endif // OPENKNX_I2C_BENCHMARK
+
+        openknx.logger.logWithPrefixAndValues("i2c", "Error: Unknown command '%s'", command.c_str());
+        openknx.logger.logWithPrefix("i2c", "Type 'i2c ?' for help");
+    } // processI2cCommand
 } // namespace OpenKNX
