@@ -270,7 +270,7 @@ For complete PIO I2C documentation including:
 - Troubleshooting guide
 - Advanced features
 
-**See:** [PIO I2C Documentation](src/OpenKNX/I2C/Doc/README.md)
+**See:** [PIO I2C Documentation](src/OpenKNX/I2C/doc/README.md)
 
 ---
 
