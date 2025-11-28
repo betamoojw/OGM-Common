@@ -137,6 +137,29 @@ pio_i2c::pio_i2c(uint32_t sda, uint32_t scl, uint32_t baudrate)
     #endif
     // Initialize the PIO I2C program
     i2c_program_init(_inst->pio, _inst->sm, _inst->prog_offset, _inst->sda, _inst->scl);
+
+#ifdef OPENKNX_PIO_I2C_DMA
+    // Try to claim DMA channels for non-blocking I2C
+    _dma_tx = dma_claim_unused_channel(false); // TX channel (don't panic if unavailable)
+    _dma_rx = dma_claim_unused_channel(false); // RX channel (don't panic if unavailable)
+    
+    if (_dma_tx >= 0 && _dma_rx >= 0)
+    {
+        _dma_available = true;
+        // Note: DMA configuration happens in _write_dma()/_read_dma() 
+        // because we need transfer-specific settings (address, size, etc.)
+    }
+    else
+    {
+        // Fallback: Release any claimed channel and use blocking mode
+        if (_dma_tx >= 0) dma_channel_unclaim(_dma_tx);
+        if (_dma_rx >= 0) dma_channel_unclaim(_dma_rx);
+        _dma_tx = -1;
+        _dma_rx = -1;
+        _dma_available = false;
+        // No log here - happens in PIOI2CWire.cpp begin()
+    }
+#endif
 }
 
 /*
@@ -144,6 +167,12 @@ pio_i2c::pio_i2c(uint32_t sda, uint32_t scl, uint32_t baudrate)
  */
 pio_i2c::~pio_i2c()
 {
+#ifdef OPENKNX_PIO_I2C_DMA
+    // Release DMA channels if claimed
+    if (_dma_tx >= 0) dma_channel_unclaim(_dma_tx);
+    if (_dma_rx >= 0) dma_channel_unclaim(_dma_rx);
+#endif
+
     if (_inst) // Clean up instance
     {
         if (_inst->sm >= 0) // If state machine was claimed
@@ -257,28 +286,18 @@ void pio_i2c::put16(PIO pio, uint sm, uint16_t data)
     while (pio_sm_is_tx_fifo_full(pio, sm))
     {
         tight_loop_contents();
-        // if (check_error(pio, sm))
-        //{
-        //     return; // Exit if error occurs
-        // }
     }
     *(volatile io_rw_16*)&pio->txf[sm] = data;
 }
 
 /*
- * @brief Put data into the PIO I2C TX FIFO without checking for errors
- * @note This function does not check for TX FIFO full status or errors.
- *       and should not be stopped on errors during setup phase.
+ * @brief Put data into the PIO I2C TX FIFO (blocking)
  */
 static void pio_i2c_put16_nocheck(PIO pio, uint sm, uint16_t data)
 {
     while (pio_sm_is_tx_fifo_full(pio, sm))
     {
         tight_loop_contents();
-        // if (check_error(pio, sm))
-        //{
-        //     return; // Exit if error occurs
-        // }
     }
     *(volatile io_rw_16*)&pio->txf[sm] = data;
 }
@@ -296,7 +315,6 @@ uint8_t pio_i2c::get(PIO pio, uint sm)
  */
 void pio_i2c::start(PIO pio, uint sm)
 {
-    // !! Important: START condition must ALWAYS be sent completely
     pio_i2c_put16_nocheck(pio, sm, 3u << 10);                                      // 4 Instructions
     pio_i2c_put16_nocheck(pio, sm, set_scl_sda_program_instructions[I2C_SC1_SD1]); // Idle
     pio_i2c_put16_nocheck(pio, sm, set_scl_sda_program_instructions[I2C_SC1_SD0]); // START
@@ -309,7 +327,6 @@ void pio_i2c::start(PIO pio, uint sm)
  */
 void pio_i2c::stop(PIO pio, uint sm)
 {
-    // STOP condition
     pio_i2c_put16_nocheck(pio, sm, 2u << 10);                                      // 3 Instructions
     pio_i2c_put16_nocheck(pio, sm, set_scl_sda_program_instructions[I2C_SC0_SD0]); // Hold
     pio_i2c_put16_nocheck(pio, sm, set_scl_sda_program_instructions[I2C_SC1_SD0]); // STOP
@@ -381,7 +398,7 @@ int pio_i2c::_write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t* txbuf, uin
 
     if (send_stop)
     {
-        stop(pio, sm);      // Send STOP condition ( Only STOP if requested/forced)
+        stop(pio, sm);      // Send STOP condition
         wait_idle(pio, sm); // Ensure bus is idle
     }
     else
@@ -472,12 +489,180 @@ int pio_i2c::_read_blocking(PIO pio, uint sm, uint8_t addr, uint8_t* rxbuf, uint
     return err;
 }
 
+#ifdef OPENKNX_PIO_I2C_DMA
+/*
+ * @brief DMA-based write (non-blocking, timer-interrupt safe)
+ * @note This function returns immediately after starting DMA transfer
+ */
+int pio_i2c::_write_dma(PIO pio, uint sm, uint8_t addr, uint8_t* txbuf, uint len, bool send_stop)
+{
+    if (!_dma_available) 
+    {
+        // Fallback to blocking mode if DMA not available
+        return _write_blocking(pio, sm, addr, txbuf, len, send_stop);
+    }
+
+    // Check if previous DMA transfer still busy
+    if (dma_channel_is_busy(_dma_tx))
+    {
+        return -2; // Busy, caller should retry
+    }
+
+    int err = 0;
+    pio_interrupt_clear(pio, sm);
+    
+    // Manual START + Address (must be done before DMA)
+    start(pio, sm);
+    rx_enable(pio, sm, false);
+    
+    uint8_t addr_byte = (addr << 1) | 0; // Write address
+    put16(pio, sm, (addr_byte << 1) | 1u);
+    
+    // Configure DMA for TX FIFO
+    dma_channel_config c = dma_channel_get_default_config(_dma_tx);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_16); // 16-bit transfers (put16)
+    channel_config_set_read_increment(&c, true);  // Increment read address
+    channel_config_set_write_increment(&c, false); // Fixed write address (FIFO)
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, true)); // TX DREQ
+    
+    // Prepare data with Final bit for last byte
+    static uint16_t dma_buffer[256]; // Static to avoid stack issues
+    for (size_t i = 0; i < len; i++)
+    {
+        dma_buffer[i] = (txbuf[i] << 1) | ((i == len - 1) << 9) | 1u;
+    }
+    
+    dma_channel_configure(
+        _dma_tx,
+        &c,
+        &pio->txf[sm],  // Write to TX FIFO
+        dma_buffer,     // Read from buffer
+        len,            // Transfer count
+        true            // Start immediately
+    );
+    
+    // Note: We return immediately! DMA runs in background
+    // Caller must check dma_channel_is_busy() before next transfer
+    
+    if (send_stop)
+    {
+        // Wait for DMA to finish, then send STOP
+        dma_channel_wait_for_finish_blocking(_dma_tx);
+        stop(pio, sm);
+        wait_idle(pio, sm);
+    }
+    
+    if (check_error(pio, sm))
+    {
+        err = -1;
+        resume_after_error(pio, sm);
+    }
+    
+    return err;
+}
+
+/*
+ * @brief DMA-based read (non-blocking, timer-interrupt safe)
+ */
+int pio_i2c::_read_dma(PIO pio, uint sm, uint8_t addr, uint8_t* rxbuf, uint len, bool send_stop)
+{
+    if (!_dma_available)
+    {
+        // Fallback to blocking mode
+        return _read_blocking(pio, sm, addr, rxbuf, len, send_stop);
+    }
+    
+    // Check if previous DMA transfer still busy
+    if (dma_channel_is_busy(_dma_rx))
+    {
+        return -2; // Busy, caller should retry
+    }
+    
+    int err = 0;
+    pio_interrupt_clear(pio, sm);
+    
+    start(pio, sm);
+    rx_enable(pio, sm, true);
+    
+    // Flush RX FIFO
+    while (!pio_sm_is_rx_fifo_empty(pio, sm))
+    {
+        (void)get(pio, sm);
+    }
+    
+    uint8_t addr_byte = (addr << 1) | 1; // Read address
+    put16(pio, sm, (addr_byte << 1) | 1u);
+    
+    // Send read commands
+    for (uint i = 0; i < len; i++)
+    {
+        put16(pio, sm, (0xffu << 1) | (i == len - 1 ? (1u << 9) | 1u : 0));
+    }
+    
+    // Configure DMA for RX FIFO
+    dma_channel_config c = dma_channel_get_default_config(_dma_rx);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
+    channel_config_set_read_increment(&c, false); // Fixed read (FIFO)
+    channel_config_set_write_increment(&c, true);  // Increment write
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false)); // RX DREQ
+    
+    dma_channel_configure(
+        _dma_rx,
+        &c,
+        rxbuf,          // Write to buffer
+        &pio->rxf[sm],  // Read from RX FIFO
+        len + 1,        // +1 for address ACK
+        true            // Start immediately
+    );
+    
+    // Wait for completion (read must complete before STOP)
+    dma_channel_wait_for_finish_blocking(_dma_rx);
+    
+    // Discard first byte (address ACK)
+    memmove(rxbuf, rxbuf + 1, len);
+    
+    if (send_stop)
+    {
+        stop(pio, sm);
+    }
+    
+    if (check_error(pio, sm))
+    {
+        err = -1;
+        resume_after_error(pio, sm);
+    }
+    else
+    {
+        wait_idle(pio, sm);
+        if (check_error(pio, sm))
+        {
+            err = -1;
+            resume_after_error(pio, sm);
+        }
+    }
+    
+    return err;
+}
+#endif // OPENKNX_PIO_I2C_DMA
+
 /*
  * @brief Public write blocking method
  */
 int pio_i2c::write_blocking(uint8_t addr, const uint8_t* data, size_t len, bool nostop)
 {
     if (!_inst) return -1;
+#ifdef OPENKNX_PIO_I2C_DMA
+    if (_dma_available)
+    {
+#ifdef OPENKNX_DEBUG
+        _dma_write_count++; // Count DMA transfers
+#endif
+        return _write_dma(_inst->pio, _inst->sm, addr, (uint8_t*)data, len, !nostop);
+    }
+#ifdef OPENKNX_DEBUG
+    _blocking_write_count++; // Count blocking transfers
+#endif
+#endif
     return _write_blocking(_inst->pio, _inst->sm, addr, (uint8_t*)data, len, !nostop);
 }
 
@@ -487,6 +672,18 @@ int pio_i2c::write_blocking(uint8_t addr, const uint8_t* data, size_t len, bool 
 int pio_i2c::read_blocking(uint8_t addr, uint8_t* data, size_t len, bool nostop)
 {
     if (!_inst) return -1;
+#ifdef OPENKNX_PIO_I2C_DMA
+    if (_dma_available)
+    {
+#ifdef OPENKNX_DEBUG
+        _dma_read_count++; // Count DMA transfers
+#endif
+        return _read_dma(_inst->pio, _inst->sm, addr, data, len, !nostop);
+    }
+#ifdef OPENKNX_DEBUG
+    _blocking_read_count++; // Count blocking transfers
+#endif
+#endif
     return _read_blocking(_inst->pio, _inst->sm, addr, data, len, !nostop);
 }
 
