@@ -21,11 +21,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef OPENKNX_PIO_I2C_DMA
+#include "hardware/dma.h"
+#endif
+
 //#define PIO_I2C_USE_STATIC_PIO
 #ifdef PIO_I2C_USE_STATIC_PIO
 #define PIO_I2C_USE_PIO_INSTANCE pio0 // We will use PIO0 for I2C
 #endif
-#define PIO_I2C_TIMEOUT_US 50000      // In microseconds (50ms - Should be enough for I2C operations)
+#define PIO_I2C_TIMEOUT_US 50000      // In microseconds (50ms - Required for PIO I2C)
 
 /*
  * @brief PIO I2C instance structure
@@ -74,5 +78,25 @@ class pio_i2c
     pio_i2c_inst_t* _inst;                                                                                // PIO I2C instance
     int _write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t* txbuf, uint len, bool send_stop = true); // Write blocking
     int _read_blocking(PIO pio, uint sm, uint8_t addr, uint8_t* rxbuf, uint len, bool send_stop = true);  // Read blocking
+
+#ifdef OPENKNX_PIO_I2C_DMA
+    // DMA members - public so PIOI2CWire can check status
+    int _dma_tx = -1;          // DMA channel for TX (FIFO writes)
+    int _dma_rx = -1;          // DMA channel for RX (FIFO reads)
+    bool _dma_available = false; // DMA successfully initialized
+    
+#ifdef OPENKNX_DEBUG
+    // Statistics (only in debug builds)
+    uint32_t _dma_write_count = 0;
+    uint32_t _dma_read_count = 0;
+    uint32_t _blocking_write_count = 0;
+    uint32_t _blocking_read_count = 0;
+#endif
+    
+  private:
+    // DMA transfer functions (non-blocking)
+    int _write_dma(PIO pio, uint sm, uint8_t addr, uint8_t* txbuf, uint len, bool send_stop = true);
+    int _read_dma(PIO pio, uint sm, uint8_t addr, uint8_t* rxbuf, uint len, bool send_stop = true);
+#endif
 };
 #endif // !defined(ARDUINO_ARCH_RP2040)
